@@ -14,12 +14,6 @@ use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mime\Email;
 
-# This controller function is to upload a csv file at api/upload
-# The field name / KEY for the file is data, type is file
-# The loaded file is .csv format where data is written
-# The POST data from .csv file is uploaded into the database
-# At the time of POST, an email is send to user to inform them about their data upload.
-
 class UploadController extends AbstractController
 {
     private $entityManager;
@@ -67,42 +61,46 @@ public function uploadData(Request $request): JsonResponse
 
         fclose($handle);
 
-        // Remove duplicates using email as the unique key
-        $users = array_values(array_reduce($users, function ($carry, $user) {
-            $carry[$user['email']] = $user;
-            return $carry;
-        }, []));
+       // Save data to the database
+foreach ($users as $user) {
+    // Check if a user with the same email already exists
+    $existingUser = $this->entityManager->getRepository(User::class)->findOneBy(['email' => $user['email']]);
 
-        // Save data to the database
-        foreach ($users as $user) {
-            $userEntity = new User();
-            $userEntity->setName($user['name']);
-            $userEntity->setEmail($user['email']);
-            $userEntity->setUsername($user['username']);
-            $userEntity->setAddress($user['address']);
-            $userEntity->setRole($user['role']);
-            $this->entityManager->persist($userEntity);
-        }
+    if (!$existingUser) {
+        // If no existing user is found, create a new one
+        $userEntity = new User();
+        $userEntity->setName($user['name']);
+        $userEntity->setEmail($user['email']);
+        $userEntity->setUsername($user['username']);
+        $userEntity->setAddress($user['address']);
+        $userEntity->setRole($user['role']);
+        $this->entityManager->persist($userEntity);
 
-        $this->entityManager->flush();
+        // Send an email to the user
+        $email = (new Email())
+            ->from('hello@example.com')
+            ->to($user['email'])
+            ->subject('Data uploaded successfully!')
+            ->text('Your data has been uploaded successfully to our database!');
 
-        // Send emails in the background using a message queue or a separate process
-        foreach ($users as $user) {
-            $email = (new Email())
-                ->from('hello@example.com')
-                ->to($user['email'])
-                ->subject('Data uploaded successfully!')
-                ->text('I hope you are doing well. I wanted to Your data has been uploaded successfully to our database and you will be able to get weekly updates from us in the future !');
+        $this->mailer->send($email);
+    } else {
+        // If an existing user is found, update their information
+        $existingUser->setName($user['name']);
+        $existingUser->setUsername($user['username']);
+        $existingUser->setAddress($user['address']);
+        $existingUser->setRole($user['role']);
+    }
+}
 
-            $this->mailer->send($email);
-        }
+$this->entityManager->flush();
 
         return $this->json([
             'status' => 'success',
             'message' => 'Data uploaded successfully!',
             'data' => [],
         ]);
-    } catch (JsonException $e) {
+        } catch (JsonException $e) {
         return $this->json([
             'status' => 'error because this address process POST request but it mean that the site is workking',
             'message' => $e->getMessage(),
@@ -111,3 +109,10 @@ public function uploadData(Request $request): JsonResponse
     }
   }
 }
+
+# This controller function is to upload a csv file at api/upload
+# The field name / KEY for the file is data, type is file
+# The loaded file is .csv format where data is written
+# The POST data from .csv file is uploaded into the database
+# At the time of POST, an email is send to user to inform them about their data upload.
+# Coded by Hamid with symfony docs, GPT and meta.
